@@ -9,6 +9,7 @@
 
 using cAlgo.API;
 using cAlgo.API.Indicators;
+using cAlgo.API.Internals;
 
 namespace cAlgo.Robots
 {
@@ -19,6 +20,8 @@ namespace cAlgo.Robots
         private SimpleMovingAverage _fastMa;
         private SimpleMovingAverage _slowMa;
         private RelativeStrengthIndex _rsi;
+        private Supertrend _supertrend;
+        private MacdCrossOver _macd;
 
         [Parameter("Fast MA Source", Group = "Fast MA")]
         public DataSeries FastMaSource { get; set; }
@@ -41,8 +44,26 @@ namespace cAlgo.Robots
         [Parameter("RSI Overbought", DefaultValue = 70, Group = "RSI", MinValue = 50, MaxValue = 100)]
         public int Overbought { get; set; }
 
+        [Parameter("Supertrend Periods", DefaultValue = 10, Group = "Supertrend", MinValue = 1)]
+        public int SupertrendPeriods { get; set; }
+
+        [Parameter("Supertrend Multiplier", DefaultValue = 3.0, Group = "Supertrend", MinValue = 0.1)]
+        public double SupertrendMultiplier { get; set; }
+
+        [Parameter("MACD Long Cycle", DefaultValue = 26, Group = "MACD", MinValue = 1)]
+        public int MacdLongCycle { get; set; }
+
+        [Parameter("MACD Short Cycle", DefaultValue = 12, Group = "MACD", MinValue = 1)]
+        public int MacdShortCycle { get; set; }
+
+        [Parameter("MACD Signal Periods", DefaultValue = 9, Group = "MACD", MinValue = 1)]
+        public int MacdSignalPeriods { get; set; }
+
         [Parameter("Volume (Lots)", DefaultValue = 0.01, Group = "Trade")]
         public double VolumeInLots { get; set; }
+
+        [Parameter("Trailing Stop (Pips)", DefaultValue = 50, Group = "Trade", MinValue = 0)]
+        public double TrailingStopInPips { get; set; }
 
         [Parameter("Stop Loss (Pips)", DefaultValue = 100, Group = "Trade", MinValue = 1)]
         public double StopLossInPips { get; set; }
@@ -61,7 +82,9 @@ namespace cAlgo.Robots
             _volumeInUnits = Symbol.QuantityToVolumeInUnits(VolumeInLots);
             _fastMa = Indicators.SimpleMovingAverage(FastMaSource, FastMaPeriod);
             _slowMa = Indicators.SimpleMovingAverage(SlowMaSource, SlowMaPeriod);
-            _rsi = Indicators.RelativeStrengthIndex(MarketSeries.Close, RsiPeriod);
+            _rsi = Indicators.RelativeStrengthIndex(Bars.ClosePrices, RsiPeriod);
+            _supertrend = Indicators.Supertrend(SupertrendPeriods, SupertrendMultiplier);
+            _macd = Indicators.MacdCrossOver(Bars.ClosePrices, MacdLongCycle, MacdShortCycle, MacdSignalPeriods);
 
             _fastMa.Result.Line.Color = Color.Gold;
             _slowMa.Result.Line.Color = Color.DarkOrange;
@@ -69,18 +92,39 @@ namespace cAlgo.Robots
 
         protected override void OnBarClosed()
         {
-            var inUptrend = _fastMa.Result.LastValue > _slowMa.Result.LastValue;
-            var inDowntrend = _fastMa.Result.LastValue < _slowMa.Result.LastValue;
+            var trendUp = _supertrend.UpTrend.Last(0) < Bars.LowPrices.Last(0) && _supertrend.DownTrend.Last(1) > Bars.HighPrices.Last(1);
+            var trendDown = _supertrend.DownTrend.Last(0) > Bars.HighPrices.Last(0) && _supertrend.UpTrend.Last(1) < Bars.LowPrices.Last(1);
 
-            if (inUptrend && _rsi.Result.LastValue < Oversold)
+            var macdCrossUp = _macd.MACD.Last(0) > _macd.Signal.Last(0) && _macd.MACD.Last(1) <= _macd.Signal.Last(1);
+            var macdCrossDown = _macd.MACD.Last(0) < _macd.Signal.Last(0) && _macd.MACD.Last(1) >= _macd.Signal.Last(1);
+
+            if (trendUp && macdCrossUp && _rsi.Result.LastValue < Oversold)
             {
                 ClosePositions(TradeType.Sell);
                 ExecuteMarketOrder(TradeType.Buy, SymbolName, _volumeInUnits, Label, StopLossInPips, TakeProfitInPips);
             }
-            else if (inDowntrend && _rsi.Result.LastValue > Overbought)
+            else if (trendDown && macdCrossDown && _rsi.Result.LastValue > Overbought)
             {
                 ClosePositions(TradeType.Buy);
                 ExecuteMarketOrder(TradeType.Sell, SymbolName, _volumeInUnits, Label, StopLossInPips, TakeProfitInPips);
+            }
+        }
+
+        protected override void OnTick()
+        {
+            foreach (var position in Positions.FindAll(Label))
+            {
+                double? newStopLoss;
+
+                if (position.TradeType == TradeType.Buy)
+                    newStopLoss = Symbol.Bid - TrailingStopInPips * Symbol.PipSize;
+                else
+                    newStopLoss = Symbol.Ask + TrailingStopInPips * Symbol.PipSize;
+
+                if (position.TradeType == TradeType.Buy && (position.StopLoss == null || newStopLoss > position.StopLoss))
+                    ModifyPosition(position, newStopLoss, position.TakeProfit);
+                else if (position.TradeType == TradeType.Sell && (position.StopLoss == null || newStopLoss < position.StopLoss))
+                    ModifyPosition(position, newStopLoss, position.TakeProfit);
             }
         }
 
