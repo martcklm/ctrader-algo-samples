@@ -3,4 +3,4 @@ cBot / Indicator Samples of cTrader Algo API
 
 ## Custom Samples
 
-- **GoldTrendStrategy**: Trend-following cBot for XAUUSD using Supertrend, MACD, RSI and optional dynamic volume management.
+- **GoldTrendStrategy**: Moving average crossover strategy for XAUUSD with RSI confirmation and optional dynamic volume control.

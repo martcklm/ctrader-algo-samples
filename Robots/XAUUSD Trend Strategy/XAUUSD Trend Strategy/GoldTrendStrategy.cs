@@ -21,44 +21,28 @@ namespace cAlgo.Robots
         private SimpleMovingAverage _fastMa;
         private SimpleMovingAverage _slowMa;
         private RelativeStrengthIndex _rsi;
-        private Supertrend _supertrend;
-        private MacdCrossOver _macd;
 
         [Parameter("Fast MA Source", Group = "Fast MA")]
         public DataSeries FastMaSource { get; set; }
 
-        [Parameter("Fast MA Period", DefaultValue = 50, Group = "Fast MA", MinValue = 1)]
+        [Parameter("Fast MA Period", DefaultValue = 20, Group = "Fast MA", MinValue = 1)]
         public int FastMaPeriod { get; set; }
 
         [Parameter("Slow MA Source", Group = "Slow MA")]
         public DataSeries SlowMaSource { get; set; }
 
-        [Parameter("Slow MA Period", DefaultValue = 200, Group = "Slow MA", MinValue = 1)]
+        [Parameter("Slow MA Period", DefaultValue = 50, Group = "Slow MA", MinValue = 1)]
         public int SlowMaPeriod { get; set; }
 
         [Parameter("RSI Period", DefaultValue = 14, Group = "RSI", MinValue = 1)]
         public int RsiPeriod { get; set; }
 
-        [Parameter("RSI Oversold", DefaultValue = 30, Group = "RSI", MinValue = 1, MaxValue = 50)]
+        [Parameter("RSI Oversold", DefaultValue = 45, Group = "RSI", MinValue = 1, MaxValue = 50)]
         public int Oversold { get; set; }
 
-        [Parameter("RSI Overbought", DefaultValue = 70, Group = "RSI", MinValue = 50, MaxValue = 100)]
+        [Parameter("RSI Overbought", DefaultValue = 55, Group = "RSI", MinValue = 50, MaxValue = 100)]
         public int Overbought { get; set; }
 
-        [Parameter("Supertrend Periods", DefaultValue = 10, Group = "Supertrend", MinValue = 1)]
-        public int SupertrendPeriods { get; set; }
-
-        [Parameter("Supertrend Multiplier", DefaultValue = 3.0, Group = "Supertrend", MinValue = 0.1)]
-        public double SupertrendMultiplier { get; set; }
-
-        [Parameter("MACD Long Cycle", DefaultValue = 26, Group = "MACD", MinValue = 1)]
-        public int MacdLongCycle { get; set; }
-
-        [Parameter("MACD Short Cycle", DefaultValue = 12, Group = "MACD", MinValue = 1)]
-        public int MacdShortCycle { get; set; }
-
-        [Parameter("MACD Signal Periods", DefaultValue = 9, Group = "MACD", MinValue = 1)]
-        public int MacdSignalPeriods { get; set; }
 
         [Parameter("Volume (Lots)", DefaultValue = 0.01, Group = "Trade")]
         public double VolumeInLots { get; set; }
@@ -91,15 +75,10 @@ namespace cAlgo.Robots
 
             if (!UseDynamicVolume)
                 _volumeInUnits = Symbol.QuantityToVolumeInUnits(VolumeInLots);
-
-            _fastMa = Indicators.SimpleMovingAverage(FastMaSource, FastMaPeriod);
-            _slowMa = Indicators.SimpleMovingAverage(SlowMaSource, SlowMaPeriod);
-            _rsi = Indicators.RelativeStrengthIndex(Bars.ClosePrices, RsiPeriod);
-            _supertrend = Indicators.Supertrend(SupertrendPeriods, SupertrendMultiplier);
-            _macd = Indicators.MacdCrossOver(Bars.ClosePrices, MacdLongCycle, MacdShortCycle, MacdSignalPeriods);
-
-            _fastMa.Result.Line.Color = Color.Gold;
-            _slowMa.Result.Line.Color = Color.DarkOrange;
+            var crossUp = _fastMa.Result.HasCrossedAbove(_slowMa.Result, 0);
+            var crossDown = _fastMa.Result.HasCrossedBelow(_slowMa.Result, 0);
+            if (crossUp && _rsi.Result.LastValue > Overbought)
+            else if (crossDown && _rsi.Result.LastValue < Oversold)
         }
 
         protected override void OnBarClosed()
