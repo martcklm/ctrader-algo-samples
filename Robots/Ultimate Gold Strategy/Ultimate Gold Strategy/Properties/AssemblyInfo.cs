@@ -2,16 +2,16 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyTitle("GoldAdvancedStrategy")]
+[assembly: AssemblyTitle("UltimateGoldStrategy")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyProduct("GoldAdvancedStrategy")]
+[assembly: AssemblyProduct("UltimateGoldStrategy")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
 [assembly: ComVisible(false)]
 
-[assembly: Guid("a602b2fa-d783-4cf2-881e-3d927e3b6a8e")]
+[assembly: Guid("b4c6b85a-c2e0-4c8b-b3e3-3cc069f72d5c")]
 
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]

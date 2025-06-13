@@ -15,12 +15,34 @@ using cAlgo.API.Internals;
 namespace cAlgo.Robots
 {
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None, AddIndicators = true)]
-    public class GoldAdvancedStrategy : Robot
+    public class UltimateGoldStrategy : Robot
     {
         private double _volumeInUnits;
-        private Supertrend _supertrend;
-        private MacdHistogram _macd;
+        private ExponentialMovingAverage _fastEma;
+        private ExponentialMovingAverage _slowEma;
+        private DirectionalMovementSystem _adx;
         private RelativeStrengthIndex _rsi;
+
+        [Parameter("Fast EMA Period", DefaultValue = 50, Group = "Trend", MinValue = 1)]
+        public int FastEmaPeriod { get; set; }
+
+        [Parameter("Slow EMA Period", DefaultValue = 200, Group = "Trend", MinValue = 1)]
+        public int SlowEmaPeriod { get; set; }
+
+        [Parameter("ADX Period", DefaultValue = 14, Group = "Trend", MinValue = 1)]
+        public int AdxPeriod { get; set; }
+
+        [Parameter("ADX Threshold", DefaultValue = 25, Group = "Trend", MinValue = 1)]
+        public int AdxThreshold { get; set; }
+
+        [Parameter("RSI Period", DefaultValue = 14, Group = "RSI", MinValue = 1)]
+        public int RsiPeriod { get; set; }
+
+        [Parameter("RSI Oversold", DefaultValue = 30, Group = "RSI", MinValue = 1, MaxValue = 50)]
+        public int Oversold { get; set; }
+
+        [Parameter("RSI Overbought", DefaultValue = 70, Group = "RSI", MinValue = 50, MaxValue = 100)]
+        public int Overbought { get; set; }
 
         [Parameter("Volume (Lots)", DefaultValue = 0.01, Group = "Trade")]
         public double VolumeInLots { get; set; }
@@ -34,41 +56,17 @@ namespace cAlgo.Robots
         [Parameter("Max Spread (pips)", DefaultValue = 50, Group = "Trade", MinValue = 0)]
         public double MaxSpreadInPips { get; set; }
 
-        [Parameter("Trailing Stop (Pips)", DefaultValue = 50, Group = "Trade", MinValue = 0)]
-        public double TrailingStopInPips { get; set; }
-
         [Parameter("Stop Loss (Pips)", DefaultValue = 100, Group = "Trade", MinValue = 1)]
         public double StopLossInPips { get; set; }
 
         [Parameter("Take Profit (Pips)", DefaultValue = 200, Group = "Trade", MinValue = 1)]
         public double TakeProfitInPips { get; set; }
 
-        [Parameter("Label", DefaultValue = "GoldAdvancedStrategy", Group = "Trade")]
+        [Parameter("Trailing Stop (Pips)", DefaultValue = 50, Group = "Trade", MinValue = 0)]
+        public double TrailingStopInPips { get; set; }
+
+        [Parameter("Label", DefaultValue = "UltimateGoldStrategy", Group = "Trade")]
         public string Label { get; set; }
-
-        [Parameter("Supertrend Periods", DefaultValue = 10, Group = "Supertrend", MinValue = 1)]
-        public int SupertrendPeriods { get; set; }
-
-        [Parameter("Supertrend Multiplier", DefaultValue = 3.0, Group = "Supertrend", MinValue = 0.1)]
-        public double SupertrendMultiplier { get; set; }
-
-        [Parameter("MACD Long Cycle", DefaultValue = 26, Group = "MACD", MinValue = 1)]
-        public int MacdLongCycle { get; set; }
-
-        [Parameter("MACD Short Cycle", DefaultValue = 12, Group = "MACD", MinValue = 1)]
-        public int MacdShortCycle { get; set; }
-
-        [Parameter("MACD Signal Periods", DefaultValue = 9, Group = "MACD", MinValue = 1)]
-        public int MacdSignalPeriods { get; set; }
-
-        [Parameter("RSI Period", DefaultValue = 14, Group = "RSI", MinValue = 1)]
-        public int RsiPeriod { get; set; }
-
-        [Parameter("RSI Oversold", DefaultValue = 30, Group = "RSI", MinValue = 1, MaxValue = 50)]
-        public int Oversold { get; set; }
-
-        [Parameter("RSI Overbought", DefaultValue = 70, Group = "RSI", MinValue = 50, MaxValue = 100)]
-        public int Overbought { get; set; }
 
         protected override void OnStart()
         {
@@ -78,8 +76,9 @@ namespace cAlgo.Robots
             if (!UseDynamicVolume)
                 _volumeInUnits = Symbol.QuantityToVolumeInUnits(VolumeInLots);
 
-            _supertrend = Indicators.Supertrend(SupertrendPeriods, SupertrendMultiplier);
-            _macd = Indicators.MacdHistogram(Bars.ClosePrices, MacdLongCycle, MacdShortCycle, MacdSignalPeriods);
+            _fastEma = Indicators.ExponentialMovingAverage(Bars.ClosePrices, FastEmaPeriod);
+            _slowEma = Indicators.ExponentialMovingAverage(Bars.ClosePrices, SlowEmaPeriod);
+            _adx = Indicators.DirectionalMovementSystem(AdxPeriod);
             _rsi = Indicators.RelativeStrengthIndex(Bars.ClosePrices, RsiPeriod);
         }
 
@@ -88,20 +87,18 @@ namespace cAlgo.Robots
             if (Symbol.Spread / Symbol.PipSize > MaxSpreadInPips)
                 return;
 
-            var upTrend = _supertrend.UpTrend.Last(0) < Bars.LowPrices.Last(0) && _supertrend.DownTrend.Last(1) > Bars.HighPrices.Last(1);
-            var downTrend = _supertrend.DownTrend.Last(0) > Bars.HighPrices.Last(0) && _supertrend.UpTrend.Last(1) < Bars.LowPrices.Last(1);
-
-            var macdCrossUp = _macd.Histogram.Last(0) > 0 && _macd.Histogram.Last(1) <= 0;
-            var macdCrossDown = _macd.Histogram.Last(0) < 0 && _macd.Histogram.Last(1) >= 0;
+            var emaCrossUp = _fastEma.Result.Last(0) > _slowEma.Result.Last(0) && _fastEma.Result.Last(1) <= _slowEma.Result.Last(1);
+            var emaCrossDown = _fastEma.Result.Last(0) < _slowEma.Result.Last(0) && _fastEma.Result.Last(1) >= _slowEma.Result.Last(1);
+            var trendStrong = _adx.ADX.LastValue >= AdxThreshold;
 
             var volume = GetTradeVolume();
 
-            if (upTrend && macdCrossUp && _rsi.Result.LastValue < Oversold)
+            if (emaCrossUp && trendStrong && _rsi.Result.LastValue < Oversold)
             {
                 ClosePositions(TradeType.Sell);
                 ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, Label, StopLossInPips, TakeProfitInPips);
             }
-            else if (downTrend && macdCrossDown && _rsi.Result.LastValue > Overbought)
+            else if (emaCrossDown && trendStrong && _rsi.Result.LastValue > Overbought)
             {
                 ClosePositions(TradeType.Buy);
                 ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, Label, StopLossInPips, TakeProfitInPips);
